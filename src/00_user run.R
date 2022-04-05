@@ -1,7 +1,9 @@
 # Step 1: select focal species --------------------------------------------
-
 #TODO Double check NT list with OC
-sppselect <- "Cacosternum capense"
+
+# sppselect <- "Cacosternum capense"
+# sppselect <- "Breviceps gibbosus"
+sppselect <- "Hemisus guttatus"
 
 # Step 2: extract the occurrence data from amphibian databases ----------
 source("src/01_extract and process occ data.R")

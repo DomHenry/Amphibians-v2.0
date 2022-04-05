@@ -15,6 +15,7 @@ library(raster)
 library(rgeos)
 library(sp)
 library(tidyverse)
+library(SDMutils)
 ## ________________________________________________________________________
 print(glue("PROCESSING: {sppselect}"))
 
@@ -87,8 +88,8 @@ expert_range <- st_read(expert_file) %>%
 
 plot(expert_range$geometry)
 
-source("helper functions/check_occ_expert.R")
-expert_results <- check_occ_expert(expert_range, occ_data_sf)
+# source("helper functions/check_occ_expert.R")
+expert_results <- SDMutils::check_occ_range(expert_range, occ_data_sf)
 
 expert_df <- expert_results %>%
   st_drop_geometry()

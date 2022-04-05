@@ -13,6 +13,7 @@ library(gghighlight)
 library(gridExtra)
 library(ggpubr)
 library(glue)
+library(SDMutils)
 ## ________________________________________________________________________
 
 ## Load occurrence data
@@ -23,7 +24,7 @@ load(glue("{sdm_dir}/{sppselect}/occ_data_clean.RData"))
 
 # Add latitude and longitude columns 
 occ_data_sf <- occ_data_sf %>% 
-  bind_cols(as.tibble(st_coordinates(occ_data_sf))) %>% 
+  bind_cols(as_tibble(st_coordinates(occ_data_sf))) %>% 
   select(-geometry,geometry)
 
 glimpse(occ_data_sf)
@@ -61,6 +62,7 @@ occ_data_sf <- occ_data_sf %>%
   mutate(year_date = dmy(str_c("01","01",year, sep = "-"))) %>% 
   mutate(decade = as.factor(year(floor_date(year_date, years(10)))))
 
+## Count undated records
 undated <- occ_data_sf %>% 
   filter(is.na(year_date)) %>% 
   nrow()
@@ -71,41 +73,15 @@ ptheme <- theme(axis.text.x = element_text(angle = 90, size = 16),
                 axis.title = element_text(size = 16),
                 title = element_text(size = 18))
 
-## Occurrence records frequency counts
-occ_data_sf %>% 
-  ggplot(aes(x = year_date)) +
-  geom_bar() +
-  ylab("Count of occurrence records") +
-  xlab ("") +
-  labs(title = sppselect,
-       subtitle = glue("{undated} undated records from a total of {nrow(occ_data_sf)}"))+
-  ptheme
-
-ggsave(glue("{sdm_dir}/{sppselect}/occ_frequency_date_all_{sppselect}.jpg"), height = 9, width = 12)
-
-occ_data_sf %>% 
-  filter(year_date > "1980-01-01") %>% 
-  ggplot(aes(x = year_date)) +
-  geom_bar() +
-  ylab("Count of occurrence records") +
-  xlab ("") +
-  labs(title = sppselect,
-       subtitle = glue("{undated} undated records"))+
-  scale_x_date(date_breaks = "3 year", date_labels = "%Y")+
-  ptheme
-
-ggsave(glue("{sdm_dir}/{sppselect}/occ_frequency_date_1980_{sppselect}.jpg"), height = 9, width = 12)
+## Generate plots
+SDMutils::plot_occ_temporal(occ_data_sf, ptheme)
 
 # Spatial plots -----------------------------------------------------------
 
 ## Import spatial data
 latlongCRS <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 za <- st_read("data input/RSA_fixed.shp",crs = latlongCRS)
-
 range <- st_read(glue("data input/expert_polygons/{sppselect}.shp"))
-
-## Create inset box
-occ_bbox <- st_make_grid(st_buffer(occ_data_sf, 0.3), n = 1) # Make a grid with one cell
 
 ## Set theme
 ptheme <- theme(legend.text = element_text(size = 22),
@@ -113,47 +89,4 @@ ptheme <- theme(legend.text = element_text(size = 22),
                 axis.text = element_text(size = 18),
                 plot.title = element_text(size = 24))
 
-p1 <- ggplot() +
-  geom_sf(data = za, fill = alpha("grey",0.3), size = 0.5)+
-  geom_sf(data = range, fill = NA, col = "dodgerblue", size = 0.8) +
-  geom_sf(data = occ_data_sf, size = 1.5, col = "black")+
-  theme_bw()+
-  ggtitle(glue("{sppselect}: {nrow(occ_data_sf)} occurrence points"))+
-  ptheme 
-
-ggsave(glue("{sdm_dir}/{sppselect}/occ_map.jpg"), plot = p1, height = 12, width = 16)
-
-p2 <- ggplot()+
-  geom_sf(data = za, fill = NA, size = 0.5)+
-  geom_sf(data =  occ_data_sf, aes(color = decade), size = 3)+
-  scale_color_viridis_d(na.value = alpha("grey",0.7), direction = 1)+
-  guides(color = guide_legend(title="Decade",
-                              override.aes = list(size = 8)))+
-  coord_sf(xlim = c(st_bbox(occ_bbox)$xmin,st_bbox(occ_bbox)$xmax),
-           ylim = c(st_bbox(occ_bbox)$ymin,st_bbox(occ_bbox)$ymax))+
-  theme_bw()+
-  ptheme +
-  ggtitle(glue("{sppselect}"))
-
-ggsave(glue("{sdm_dir}/{sppselect}/occ_map_decadal.jpg"), plot = p2, height = 12, width = 16)
-
-p3 <- ggplot() +
-  geom_sf(data = za, fill = alpha("grey",0.3), size = 0.5)+
-  geom_sf(data = occ_bbox, fill = NA, col = "dodgerblue", size = 1.2) +
-  geom_sf(data = occ_data_sf, size = 1.5, col = "black")+
-  theme_bw()+
-  ggtitle(glue("{sppselect}"))+
-  ptheme 
-
-p4 <- ggplot()+
-  geom_sf(data = za, fill = alpha("grey",0.3), size = 0.5)+
-  geom_sf(data = occ_data_sf, size = 1.5, col = "black")+
-  coord_sf(xlim = c(st_bbox(occ_bbox)$xmin,st_bbox(occ_bbox)$xmax),
-           ylim = c(st_bbox(occ_bbox)$ymin,st_bbox(occ_bbox)$ymax))+
-  theme_bw()+
-  theme(panel.border = element_rect(colour = "dodgerblue", fill=NA, size=1.6))+
-  ptheme
-
-p5 <- grid.arrange(grobs = list(p3,p4), nrow = 1)
-ggsave(glue("{sdm_dir}/{sppselect}/occ_map_inset.jpg"), plot = p5, height = 12, width = 16)
-
+SDMutils::plot_occ_spatial(occ_data_sf, range, za, ptheme)

@@ -23,7 +23,6 @@ start <- Sys.time()
 aeaproj <- "+proj=aea +lat_1=20 +lat_2=-23 +lat_0=0 +lon_0=25 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs"
 latlongCRS <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
 
-
 # Select species ----------------------------------------------------------
 x <- glue("data input/Queries/SDM_query_{sppselect}.xlsx")
 
@@ -35,21 +34,15 @@ query <- read_xlsx(x) %>%
 sdm_dir <- "data output/sdm data processing"
 load(glue("{sdm_dir}/{sppselect}/occ_data_clean.RData"))
 
-## Run code to make manual adjustments
+# Manual adjustments (if necessary) ---------------------------------------
+
 # source("helper functions/spp_data_clean.R")
 
-# Spatial projections  ----------------------------------------------------
-geo_proj <- query$Value[which(query$Input == "Geographic projection")]
-
-if (geo_proj == "Yes") {
-  st_crs(occ_data_sf) <- latlongCRS
-  occ_points <- occ_data_sf %>%
-    st_as_sf(coords = c("decimallongitude", "decimallatitude"), crs = latlongCRS) %>%
-    st_transform(aeaproj)
-} else {
-  occ_points <- occ_data_sf %>%
-    st_as_sf(coords = c("decimallongitude", "decimallatitude"), crs = latlongCRS)
-}
+# Project data using AEA --------------------------------------------------
+st_crs(occ_data_sf) <- latlongCRS
+occ_points <- occ_data_sf %>%
+  st_as_sf(coords = c("decimallongitude", "decimallatitude"), crs = latlongCRS) %>%
+  st_transform(aeaproj)
 
 # Remove duplicate coordinates --------------------------------------------
 occ_points <- occ_points %>%
@@ -57,43 +50,25 @@ occ_points <- occ_points %>%
 
 # Create background points ------------------------------------------------
 
-## Extract buffer value from query
+## Extract buffer value from query and convert to meters
 buffval <- as.numeric(
   query$Value[which(query$Input == "Background buffer (km)")]
 ) * 1000
 
-buff_latlong <- as.numeric(
-  query$Value[which(query$Input == "Background buffer (km)")]
-) / 100 # Divide km by 100 to convert to arc_degree
-
 ## Import RSA shapefile
-if (geo_proj == "Yes") {
-  za <- st_read("data input/RSA_fixed.shp", crs = latlongCRS) %>%
+za <- st_read("data input/RSA_fixed.shp", crs = latlongCRS) %>%
     st_transform(aeaproj)
-} else {
-  za <- st_read("data input/RSA_fixed.shp", crs = latlongCRS)
-}
 
 ## Choose bounding geometry
-geom_choice <- query$Value[which(query$Input == "PA geometery")]
+geom_choice <- query$Value[which(query$Input == "PA geometery*")]
 
 ## Create buffer around occ points, create single buffer/MCP polygon and intersect with SA border
 if (geom_choice == "Buffer") {
-  if (geo_proj == "Yes") {
-    occ_buffer <- st_intersection(st_union(st_buffer(occ_points, buffval)), za)
-  } else {
-    occ_buffer <- st_intersection(st_union(st_buffer(occ_points, buff_latlong)), za)
-  }
+  occ_buffer <- st_intersection(st_union(st_buffer(occ_points, buffval)), za)
 } else if (geom_choice == "MCP") {
-  if (geo_proj == "Yes") {
-    occ_buffer <- st_intersection(st_buffer(st_convex_hull(st_union(occ_points)), buffval), za)
-  } else {
-    occ_buffer <- st_intersection(st_buffer(st_convex_hull(st_union(occ_points)), buff_latlong), za)
-  }
-} else if (geom_choice == "RSA"){
-  
+  occ_buffer <- st_intersection(st_buffer(st_convex_hull(st_union(occ_points)), buffval), za)
+} else if (geom_choice == "RSA") {
   occ_buffer <- za
-  
 }
 
 ## Read in value of background points from query
@@ -125,11 +100,7 @@ bck_points <- st_read("data output/temp_bck_dir/bck_points_updated.shp") %>%
   st_transform(aeaproj)
 
 ## Read in RSA grid
-if (geo_proj == "Yes") {
-  zagrid_sf <- readRDS("data input/zagrid_aea_sf.rds")
-} else {
-  ## Add non-projected sf ZA grid
-}
+zagrid_sf <- readRDS("data input/zagrid_aea_sf.rds")
 
 ## Create a background point unique ID
 bck_points <- mutate(bck_points, ID = str_c("B", 1:nrow(bck_points)))
@@ -184,20 +155,9 @@ projenv_aea <- function(x){
   projectRaster(x, crs=aeaproj)
 }
 
-projenv_latlong <- function(x){
-  projection(x) <- latlongCRS
-  projectRaster(x, crs=latlongCRS)
-}
-
-if (geo_proj == "Yes") {
-  envstack <- stack(envstack)
-  envstack <- stack(map(envstack@layers,projenv_aea))
-  envstack <- readAll(stack(crop(envstack,extent(bck_points)*1.10))) # Add a 10% buffer
-} else {
-  envstack <- stack(envstack)
-  envstack <- stack(map(envstack@layers,projenv_latlong))
-  envstack <- readAll(stack(crop(envstack,extent(bck_points)*1.10)))
-}
+envstack <- stack(envstack)
+envstack <- stack(map(envstack@layers,projenv_aea))
+envstack <- readAll(stack(crop(envstack,extent(bck_points)*1.10))) # Add a 10% buffer
 
 # Collinearity of environemental predictors -------------------------------
 cormatrix <- raster::layerStats(envstack, "pearson", na.rm = TRUE)
@@ -232,7 +192,7 @@ copyfrom <- x
 copyto <- glue("{sdm_dir}/{sppselect}/")
 file.copy(copyfrom, copyto, recursive=TRUE)
 
-# Write occurence points to shapefile -------------------------------------
+# Write occurrence points to shapefile -------------------------------------
 occ_points %>% 
   st_write(glue("{sdm_dir}/{sppselect}/occ_points_{sppselect}.shp"),
            delete_dsn=TRUE)
